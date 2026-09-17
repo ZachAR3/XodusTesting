@@ -94,6 +94,9 @@ class ToolingRegressionTests(unittest.TestCase):
         callback_method = next(item for item in inventory["methods"] if item.get("method_name") == "XUserRegisterForChangeEvent")
         session = TEST_FIXTURES / "coverage-session"
         calls = [
+            {"event": "initialize", "method": "InitializeApiImplEx", "hresult": "0x00000000"},
+            {"event": "query_interface", "iid": "00000000-0000-0000-0000-000000000000", "hresult": "0x00000000"},
+            {"event": "runtime_export_call", "name": "XErrorReport", "reported_error": "0x80072EE5", "hresult": "0x00000001"},
             {"event": "call", "call_id": 1, "iid": async_method["interface_iid"], "slot": async_method["vtable_slot"], "method": async_method["method_name"], "timestamp_ns": 1},
             {"event": "output", "call_id": 1, "name": "buffer", "value": {}},
             {"event": "return", "call_id": 1, "hresult": "0x00000001"},
@@ -109,6 +112,8 @@ class ToolingRegressionTests(unittest.TestCase):
         (session / "calls.jsonl").write_text("\n".join(json.dumps(item) for item in calls) + "\n", encoding="utf-8")
         (session / "callbacks.jsonl").write_text("\n".join(json.dumps(item) for item in callbacks) + "\n", encoding="utf-8")
         (session / "sideeffects.jsonl").write_text("\n".join([
+            json.dumps({"event": "runtime_load", "path": "xgameruntime.dll"}),
+            json.dumps({"event": "runtime_export_hook", "name": "QueryApiImpl", "installed": True}),
             json.dumps({"event": "side_effect", "kind": "file"}),
             json.dumps({
                 "event": "side_effect", "kind": "network",
@@ -123,6 +128,14 @@ class ToolingRegressionTests(unittest.TestCase):
         self.assertEqual(coverage["summary"]["async_results"], 1)
         self.assertEqual(coverage["summary"]["async_completed"], 1)
         self.assertEqual(coverage["summary"]["side_effects"], 2)
+        self.assertEqual(coverage["summary"]["trace_records"], len(calls))
+        self.assertEqual(coverage["summary"]["interface_queries"], 1)
+        self.assertEqual(coverage["summary"]["initializations"], 1)
+        self.assertEqual(coverage["summary"]["runtime_export_calls"], 1)
+        self.assertEqual(coverage["summary"]["runtime_reported_errors"], 1)
+        self.assertEqual(coverage["summary"]["runtime_loads"], 1)
+        self.assertEqual(coverage["summary"]["runtime_export_hooks"], 1)
+        self.assertEqual(coverage["runtime_activity"]["runtime_exports"][0]["name"], "XErrorReport")
         network = next(item for item in coverage["side_effects"] if item.get("kind") == "network")
         self.assertEqual(network["target"], {"redacted": True})
         self.assertEqual(network["host"], {"redacted": True})
@@ -179,6 +192,14 @@ class ToolingRegressionTests(unittest.TestCase):
         self.assertIn("basename", text)
         self.assertIn("redacted", text)
         self.assertNotIn("Secret", text)
+        self.assertEqual(
+            sanitize_trace.transform("Minecraft.Windows.exe", "executable_filename")["basename"],
+            "Minecraft.Windows.exe",
+        )
+        self.assertTrue(sanitize_trace.looks_like_jwt(
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjMifQ.signature"
+        ))
+        self.assertFalse(sanitize_trace.looks_like_jwt("Minecraft.Windows.exe"))
 
 
 if __name__ == "__main__":

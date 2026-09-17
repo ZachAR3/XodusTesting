@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import re
@@ -13,7 +15,7 @@ from typing import Any, Optional, Sequence
 SECRET_KEY = re.compile(r"(authorization|signature|token|ticket|cookie|credential|secret|password|refresh|session)", re.I)
 CREDENTIAL_METHOD = re.compile(r"(token|signature|authentication|auth)", re.I)
 IDENTITY_KEY = re.compile(r"(xuid|gamertag|local.?id|publisher.?user.?id|user.?id)", re.I)
-JWT = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
+JWT_PART = re.compile(r"^[A-Za-z0-9_-]+$")
 MACHINE_KEY = re.compile(r"^(computer|hostname|host|host_name|machine)(_|$)", re.I)
 PATH_KEY = re.compile(r"(path|full.?path|executable|install.?location|session|root|target|destination|url|uri|host|hostname|endpoint|filename|directory)$", re.I)
 ABSOLUTE_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\|/)")
@@ -39,6 +41,20 @@ def path_basename(value: str) -> str:
     windows_name = PureWindowsPath(value).name
     posix_name = PurePosixPath(value).name
     return windows_name if windows_name != value or "\\" in value else posix_name
+
+
+def looks_like_jwt(value: str) -> bool:
+    """Recognize compact JWTs without mistaking dotted filenames for tokens."""
+    parts = value.split(".")
+    if len(parts) != 3 or not all(JWT_PART.fullmatch(part) for part in parts):
+        return False
+    try:
+        padding = lambda part: part + "=" * (-len(part) % 4)
+        header = json.loads(base64.urlsafe_b64decode(padding(parts[0])).decode("utf-8"))
+        payload = json.loads(base64.urlsafe_b64decode(padding(parts[1])).decode("utf-8"))
+    except (binascii.Error, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    return isinstance(header, dict) and isinstance(payload, dict) and bool(header.get("alg"))
 
 
 def transform(value: Any, key: str = "") -> Any:
@@ -73,7 +89,7 @@ def transform(value: Any, key: str = "") -> Any:
     if isinstance(value, str):
         if MACHINE_KEY.search(key):
             return redact(value, "machine")
-        if SECRET_KEY.search(key) or JWT.match(value):
+        if SECRET_KEY.search(key) or looks_like_jwt(value):
             return redact(value, "secret")
         if IDENTITY_KEY.search(key):
             return {"pseudonym": "id#" + digest(value)[:16], "length": len(value)}

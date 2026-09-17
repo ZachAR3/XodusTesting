@@ -35,6 +35,15 @@ def safe_basename(value: str) -> str:
     return PurePosixPath(value).name
 
 
+def metadata_basename(value: object, fallback: str) -> str:
+    """Read a filename from either raw metadata or sanitized path metadata."""
+    if isinstance(value, dict) and isinstance(value.get("basename"), str):
+        return value["basename"]
+    if isinstance(value, str):
+        return safe_basename(value)
+    return fallback
+
+
 def event_count(events: Iterable[dict]) -> int:
     """Count logical async events while retaining records without an ID."""
     events = list(events)
@@ -96,6 +105,67 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             metadata = {}
+    trace_event_counts = Counter(
+        str(event.get("event"))
+        for event in calls
+        if event.get("event")
+    )
+    query_events = [event for event in calls if event.get("event") == "query_interface"]
+    initialization_events = [event for event in calls if event.get("event") == "initialize"]
+    runtime_export_events = [event for event in calls if event.get("event") == "runtime_export_call"]
+    runtime_load_events = [event for event in side_effects if event.get("event") == "runtime_load"]
+    runtime_hook_events = [event for event in side_effects if event.get("event") == "runtime_export_hook"]
+    runtime_export_rows = []
+    for name in sorted({str(event.get("name", "")) for event in runtime_export_events}):
+        export_events = [event for event in runtime_export_events if str(event.get("name", "")) == name]
+        hresults = Counter(
+            str(event.get("hresult"))
+            for event in export_events
+            if event.get("hresult") is not None
+        )
+        reported_errors = Counter(
+            str(event.get("reported_error"))
+            for event in export_events
+            if event.get("reported_error") is not None
+        )
+        runtime_export_rows.append({
+            "name": name,
+            "count": len(export_events),
+            "hresult_counts": dict(hresults),
+            "failure_count": sum(
+                hresult_failed(event.get("hresult"))
+                for event in export_events
+                if event.get("hresult") is not None
+            ),
+            "reported_error_counts": dict(reported_errors),
+            "reported_error_count": sum(
+                event.get("reported_error") is not None
+                for event in export_events
+            ),
+        })
+    query_hresults = Counter(
+        str(event.get("hresult"))
+        for event in query_events
+        if event.get("hresult") is not None
+    )
+    initialization_methods = Counter(
+        str(event.get("method", ""))
+        for event in initialization_events
+    )
+    runtime_activity = {
+        "trace_event_counts": dict(trace_event_counts),
+        "interface_query_count": len(query_events),
+        "interface_query_hresult_counts": dict(query_hresults),
+        "initialization_count": len(initialization_events),
+        "initialization_methods": dict(initialization_methods),
+        "runtime_export_call_count": len(runtime_export_events),
+        "runtime_export_failure_count": sum(row["failure_count"] for row in runtime_export_rows),
+        "runtime_export_reported_error_count": sum(row["reported_error_count"] for row in runtime_export_rows),
+        "runtime_exports": runtime_export_rows,
+        "runtime_load_count": len(runtime_load_events),
+        "runtime_export_hook_count": len(runtime_hook_events),
+        "runtime_export_hooks_installed": sum(event.get("installed") is True for event in runtime_hook_events),
+    }
     call_order: Dict[int, int] = {}
     returns: Dict[int, dict] = {}
     call_events = [event for event in calls if event.get("event") == "call"]
@@ -173,8 +243,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for item in inventory.get("methods", [])
         if item.get("kind") == "interface_method"
     }
-    game_name_value = metadata.get("executable_filename") or args.session.parent.name
-    game_name = safe_basename(str(game_name_value)) or "unknown-game"
+    game_name = metadata_basename(
+        metadata.get("executable_filename"),
+        args.session.parent.name,
+    ) or "unknown-game"
     partial_start = metadata.get("partial_start")
     method_rows = []
     blockers = []
@@ -221,6 +293,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "partial_start": partial_start,
         "interfaces_requested": query_interfaces,
         "interface_revisions_requested": query_interfaces,
+        "runtime_activity": runtime_activity,
         "methods_invoked": [row for row in method_rows if row["invoked"]],
         "methods_never_invoked": [row for row in method_rows if not row["invoked"]],
         "xodus_blocker_candidates": sorted(blockers, key=lambda row: (row["first_call_order"] or 999999, row["subsystem"], row["method"])),
@@ -234,7 +307,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ],
         "side_effects": [safe_side_effect(event) for event in side_effects if event.get("event") == "side_effect"],
         "summary": {
+            # "calls" remains the wrapped interface-method metric used by
+            # existing consumers.  Runtime exports and QueryApiImpl are
+            # reported separately so startup-only traces are not mistaken
+            # for empty traces.
             "calls": len(call_events),
+            "trace_records": len(calls),
+            "interface_queries": len(query_events),
+            "initializations": len(initialization_events),
+            "runtime_export_calls": len(runtime_export_events),
+            "runtime_export_failures": runtime_activity["runtime_export_failure_count"],
+            "runtime_reported_errors": runtime_activity["runtime_export_reported_error_count"],
+            "runtime_loads": len(runtime_load_events),
+            "runtime_export_hooks": len(runtime_hook_events),
             "methods_invoked": sum(row["invoked"] for row in method_rows),
             "methods_never_invoked": sum(not row["invoked"] for row in method_rows),
             "xodus_blocker_candidates": len(blockers),
@@ -257,7 +342,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "",
         f"Game: {game_name}",
         f"Partial start: {coverage['partial_start']}",
-        f"Calls: {coverage['summary']['calls']}",
+        f"Trace records: {coverage['summary']['trace_records']}",
+        f"Interface method calls: {coverage['summary']['calls']}",
+        f"Interface queries: {coverage['summary']['interface_queries']}",
+        f"Runtime initializations: {coverage['summary']['initializations']}",
+        f"Runtime export calls/failures/reported-errors: {coverage['summary']['runtime_export_calls']} / {coverage['summary']['runtime_export_failures']} / {coverage['summary']['runtime_reported_errors']}",
+        f"Runtime loads/export hooks: {coverage['summary']['runtime_loads']} / {coverage['summary']['runtime_export_hooks']}",
         f"Methods invoked: {coverage['summary']['methods_invoked']} / {len(method_rows)}",
         f"Callbacks observed: {coverage['summary']['callbacks']}",
         f"Async started/results/completed/completion-callbacks/cancelled: {coverage['summary']['async_started']} / {coverage['summary']['async_results']} / {coverage['summary']['async_completed']} / {coverage['summary']['async_completion_callbacks']} / {coverage['summary']['async_cancelled']}",
