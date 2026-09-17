@@ -1,0 +1,18 @@
+{
+  "computer": {
+    "redacted": true,
+    "length": 14,
+    "sha256": "a1a06aa2d6de429437612b05d0d895892f27a5a0bb4e3f33fb346c4c3228beca",
+    "type": "machine"
+  },
+  "executable_filename": {
+    "basename": "Title.exe",
+    "sha256": "715fcfec66764f5bfe66bbb056f10f44427a2ec930fa97f4f89c07184319e6be",
+    "type": "path"
+  },
+  "xgameruntime_path": {
+    "basename": "xgameruntime.dll",
+    "sha256": "a05ea99ae00bd0724643d27f661ed8a3f500386e7e5ef930aeaa4a8837eda09c",
+    "type": "path"
+  }
+}

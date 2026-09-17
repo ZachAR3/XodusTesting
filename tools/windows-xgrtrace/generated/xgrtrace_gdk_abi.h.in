@@ -1,0 +1,7 @@
+// Build-local ABI include point. This file is intentionally not populated
+// with Microsoft SDK content. CMake substitutes the locally supplied public
+// GDK umbrella header (or a diagnostic #error) at configure time.
+#pragma once
+#include <windows.h>
+#include <XAsyncProvider.h>
+@XGRTRACE_GDK_ABI_INCLUDE@

@@ -1,0 +1,9 @@
+{"token": "secret", "path": "C:\\\\dev\\\\example-user\\\\Game\\\\save.dat"}
+{"event": "output", "name": "path", "value": {"value": "C:\\\\dev\\\\example-user\\\\Game\\\\nested.dat"}}
+{"event": "argument", "name": "requestUri", "value": "https://api.example.com/private"}
+{"event": "call", "call_id": 10, "method": "XStoreQueryLicenseTokenResult"}
+{"event": "output", "call_id": 10, "name": "result", "value": {"type": "char *", "value": "XBL3.0 x=123;ABCDEF", "bytes_hex": "58424c332e3020783d3132333b414243444546"}}
+{"event": "call", "call_id": 11, "method": "XUserGetTokenAndSignatureResult"}
+{"event": "output", "call_id": 11, "name": "buffer", "value": {"type": "void *", "bytes_hex": "00112233445566778899aabbccddeeff"}}
+{"event": "call", "call_id": 12, "method": "XGameUiShowWebAuthenticationResult"}
+{"event": "output", "call_id": 12, "name": "result", "value": "fake-license-token"}

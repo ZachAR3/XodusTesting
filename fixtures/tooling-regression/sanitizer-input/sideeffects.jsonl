@@ -1,0 +1,3 @@
+{"event": "side_effect", "kind": "network", "target": {"name": "api.example.com"}, "host": "SYNTHETIC-HOST"}
+{"event": "side_effect", "kind": "network", "target": "https://api.example.com/private"}
+{"event": "side_effect", "kind": "registry", "target": "HKCU\\\\Software\\\\example-user\\\\Secret"}

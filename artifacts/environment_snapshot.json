@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "captured_utc": "2026-09-16T23:18:06.8674889Z",
+  "computer": null,
+  "windows": {
+    "product_name": "Windows 10 Enterprise",
+    "display_version": "25H2",
+    "current_build": "26200",
+    "ubr": 9278,
+    "os_version": "Microsoft Windows NT 10.0.26200.0"
+  },
+  "cpu_architecture": "AMD64",
+  "gaming_services": [
+    {
+      "name": "Microsoft.GamingServices",
+      "version": "38.116.6003.0",
+      "architecture": "X64",
+      "install_location_name": "Microsoft.GamingServices_38.116.6003.0_x64__8wekyb3d8bbwe"
+    }
+  ],
+  "target_process": {
+    "pid": null,
+    "executable": null,
+    "architecture": null
+  },
+  "loaded_xgameruntime": null,
+  "repositories": {
+    "xgameruntime": "791710510d9ba0746bbd60754215eb321800e4f0",
+    "xodus": "0670e25aeb0e0e9f800f8f2f4968ae3b681842a7",
+    "xgameruntime_docs": "7090008692569aa6081e30dfdd9de58237741e24"
+  },
+  "notes": [
+    "No game process was running during the baseline snapshot.",
+    "x86-64 tracer scope only."
+  ]
+}

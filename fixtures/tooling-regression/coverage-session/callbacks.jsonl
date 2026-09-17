@@ -1,0 +1,4 @@
+{"event": "async_start", "call_id": 1, "async_id": "async#1"}
+{"event": "async_result", "call_id": 1, "async_id": "async#1", "hresult": "0x00000000"}
+{"event": "async_complete", "call_id": 1, "async_id": "async#1", "hresult": "0x00000000"}
+{"event": "callback", "phase": "invoke", "registration_call_id": 2, "kind": "XUserChangeEventCallback"}

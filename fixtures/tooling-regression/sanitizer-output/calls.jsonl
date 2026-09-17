@@ -1,0 +1,9 @@
+{"token":{"redacted":true,"length":6,"sha256":"2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b","type":"secret"},"path":{"basename":"save.dat","sha256":"1e0b46d73067c31b550965437a175e3b2cb2f9cbc90d657dff927a952b66e2d0","type":"path"}}
+{"event":"output","name":"path","value":{"value":{"basename":"nested.dat","sha256":"007b5803d22b8dcb1cd3b5f216021b1898399c4de03806b7b400d7c49fd0e057","type":"path"}}}
+{"event":"argument","name":"requestUri","value":{"basename":"private","sha256":"dc2780959412c6623ceba3638e964c44611d27286f07b001e787a1ad1cfeb923","type":"path"}}
+{"event":"call","call_id":10,"method":"XStoreQueryLicenseTokenResult"}
+{"event":"output","call_id":10,"name":"result","value":{"type":"char *","value":{"redacted":true,"length":19,"sha256":"e10429d08adb331fdbdc3bb43ca9ef1d278839ba05c4ee6e7abcf3d04478409d","type":"credential-output"},"bytes_hex":{"redacted":true,"length":38,"sha256":"2b12d5aac377651947558a184b443a73d13fab36395b41df742f11cc6d0931fa","type":"credential-output"}}}
+{"event":"call","call_id":11,"method":"XUserGetTokenAndSignatureResult"}
+{"event":"output","call_id":11,"name":"buffer","value":{"type":"void *","bytes_hex":{"redacted":true,"length":32,"sha256":"5947d7c33d783f94b3b4c1a96ebc8991ed28f1b069b71e03376cba8caa98a720","type":"credential-output"}}}
+{"event":"call","call_id":12,"method":"XGameUiShowWebAuthenticationResult"}
+{"event":"output","call_id":12,"name":"result","value":{"redacted":true,"length":18,"sha256":"977d19b7a3097dd65025db8bd28809d666b3fe63729f79ac64bbdb7c115d0b33","type":"credential-output"}}

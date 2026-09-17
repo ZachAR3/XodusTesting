@@ -1,0 +1,9 @@
+[submodule "work/xodus"]
+	path = work/xodus
+	url = git@github.com:xodus-gaming/xodus.git
+[submodule "work/xgameruntime"]
+	path = work/xgameruntime
+	url = git@github.com:xodus-gaming/xgameruntime.git
+[submodule "work/xgameruntime-docs"]
+	path = work/xgameruntime-docs
+	url = git@github.com:xodus-gaming/xgameruntime-docs.git

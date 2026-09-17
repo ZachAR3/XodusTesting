@@ -1,0 +1,5 @@
+{"event": "call", "call_id": 1, "iid": "073b7dcb-1fcf-4030-94be-e3c9eb623428", "slot": 3, "method": "XAsyncGetStatus", "timestamp_ns": 1}
+{"event": "output", "call_id": 1, "name": "buffer", "value": {}}
+{"event": "return", "call_id": 1, "hresult": "0x00000001"}
+{"event": "call", "call_id": 2, "iid": "01acd177-91f9-4763-a38e-ccbb55ce32e0", "slot": 33, "method": "XUserRegisterForChangeEvent", "timestamp_ns": 2}
+{"event": "return", "call_id": 2, "hresult": "0x00000000"}
