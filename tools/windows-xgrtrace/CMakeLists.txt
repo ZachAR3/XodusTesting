@@ -63,6 +63,7 @@ target_compile_definitions(xgrtrace-launch PRIVATE _WIN32_WINNT=0x0A00)
 target_include_directories(xgrtrace-launch PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/trace-common
 )
+target_link_libraries(xgrtrace-launch PRIVATE advapi32 psapi)
 
 add_executable(xgrprobe xgrprobe/main.cpp)
 target_link_libraries(xgrprobe PRIVATE ole32)

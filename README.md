@@ -78,6 +78,13 @@ The build is x86-64 only. The launcher refuses non-x64 targets and never tries
 to defeat Protected Process Light or anti-cheat restrictions. A late attach
 creates partial_start: true in the session metadata.
 
+Store-packaged targets are supported when Windows permits the requested
+instrumentation access. Attach/watch configuration is passed through a
+per-process mapping, and when no `--trace-root` is supplied the launcher uses
+the target package's writable `LocalState\XGRTRACE` directory. If Windows
+denies process-injection rights, the launcher reports that boundary and does
+not weaken it.
+
 ## Build prerequisites
 
 The native Windows binaries have been built successfully on the current host
@@ -121,6 +128,12 @@ but it is a larger and more protected test target.
 .\build\xgrtrace\RelWithDebInfo\xgrtrace-launch.exe --watch Title.exe --trace-root .\traces
 .\build\xgrtrace\RelWithDebInfo\xgrtrace-marker.exe --trace-root .\traces --pid 1234 "main menu appeared"
 ~~~
+
+The launcher resolves the default tracer DLL beside
+`xgrtrace-launch.exe`, so these commands work from the repository root. For a
+Store app, start `--watch` first and then activate the app normally from the
+Xbox app or Start menu; use `--trace-root` when you want the trace outside the
+package's local state.
 
 Each session is written under:
 

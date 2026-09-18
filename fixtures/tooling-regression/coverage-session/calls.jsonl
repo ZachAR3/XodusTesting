@@ -1,3 +1,6 @@
+{"event": "initialize", "method": "InitializeApiImplEx", "hresult": "0x00000000"}
+{"event": "query_interface", "iid": "00000000-0000-0000-0000-000000000000", "hresult": "0x00000000"}
+{"event": "runtime_export_call", "name": "XErrorReport", "reported_error": "0x80072EE5", "hresult": "0x00000001"}
 {"event": "call", "call_id": 1, "iid": "073b7dcb-1fcf-4030-94be-e3c9eb623428", "slot": 3, "method": "XAsyncGetStatus", "timestamp_ns": 1}
 {"event": "output", "call_id": 1, "name": "buffer", "value": {}}
 {"event": "return", "call_id": 1, "hresult": "0x00000001"}

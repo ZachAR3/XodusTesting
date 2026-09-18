@@ -1,2 +1,4 @@
+{"event": "runtime_load", "path": "xgameruntime.dll"}
+{"event": "runtime_export_hook", "name": "QueryApiImpl", "installed": true}
 {"event": "side_effect", "kind": "file"}
 {"event": "side_effect", "kind": "network", "target": "https://api.example.com/private", "host": "api.example.com"}

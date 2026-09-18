@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <windows.h>
+#include <appmodel.h>
+#include <psapi.h>
 #include <tlhelp32.h>
 
 #include "trace_config.h"
@@ -51,6 +53,71 @@ std::wstring full_path(const std::wstring &path)
     return size && size < buffer.size() ? std::wstring(buffer.data(), size) : path;
 }
 
+std::filesystem::path launcher_directory()
+{
+    std::vector<wchar_t> buffer(32768);
+    DWORD size = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    if (!size || size >= buffer.size()) return {};
+    return std::filesystem::path(buffer.data(), buffer.data() + size).parent_path();
+}
+
+std::filesystem::path package_local_trace_root(HANDLE process)
+{
+    wchar_t family_name[PACKAGE_FAMILY_NAME_MAX_LENGTH]{};
+    UINT32 family_name_length = ARRAYSIZE(family_name);
+    if (GetPackageFamilyName(process, &family_name_length, family_name) != ERROR_SUCCESS || !family_name[0]) return {};
+
+    wchar_t local_app_data[32768]{};
+    DWORD local_app_data_length = GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data, ARRAYSIZE(local_app_data));
+    if (!local_app_data_length || local_app_data_length >= ARRAYSIZE(local_app_data)) return {};
+    return std::filesystem::path(local_app_data) / L"Packages" / family_name / L"LocalState" / L"XGRTRACE";
+}
+
+std::filesystem::path trace_root_for_target(HANDLE process, const std::filesystem::path &requested, bool explicit_root)
+{
+    if (explicit_root) return requested;
+    const auto package_root = package_local_trace_root(process);
+    if (package_root.empty()) return requested;
+    std::wcout << L"Using package-local trace root: " << package_root.wstring() << L"\n";
+    return package_root;
+}
+
+enum class ModuleCheck {
+    present,
+    absent,
+    unknown,
+};
+
+ModuleCheck target_has_module(HANDLE process, const std::wstring &expected_path)
+{
+    std::vector<HMODULE> modules(256);
+    DWORD bytes = 0;
+    for (;;) {
+        if (!EnumProcessModulesEx(process, modules.data(), static_cast<DWORD>(modules.size() * sizeof(HMODULE)),
+                &bytes, LIST_MODULES_ALL)) {
+            std::wcerr << L"Unable to verify the tracer module in the target: " << GetLastError() << L"\n";
+            return ModuleCheck::unknown;
+        }
+        if (bytes <= modules.size() * sizeof(HMODULE)) break;
+        const std::size_t required_count = bytes / sizeof(HMODULE) + 32;
+        if (required_count > 8192) return ModuleCheck::unknown;
+        modules.resize(required_count);
+    }
+
+    const std::wstring expected = lower(full_path(expected_path));
+    const DWORD count = std::min<DWORD>(bytes / sizeof(HMODULE), static_cast<DWORD>(modules.size()));
+    bool inspected_module = false;
+    for (DWORD index = 0; index < count; ++index) {
+        wchar_t path_buffer[32768]{};
+        DWORD length = GetModuleFileNameExW(process, modules[index], path_buffer, ARRAYSIZE(path_buffer));
+        if (!length || length >= ARRAYSIZE(path_buffer)) continue;
+        inspected_module = true;
+        if (lower(full_path(std::wstring(path_buffer, length))) == expected)
+            return ModuleCheck::present;
+    }
+    return inspected_module ? ModuleCheck::absent : ModuleCheck::unknown;
+}
+
 bool target_is_x64(HANDLE process)
 {
     USHORT process_machine = IMAGE_FILE_MACHINE_UNKNOWN;
@@ -60,10 +127,123 @@ bool target_is_x64(HANDLE process)
     return native_machine == IMAGE_FILE_MACHINE_AMD64 || process_machine == IMAGE_FILE_MACHINE_AMD64;
 }
 
-HANDLE write_target_configuration(DWORD pid, const std::filesystem::path &trace_root, const std::wstring &level, bool partial, bool no_wrap_async_callbacks)
+class TargetMappingSecurity {
+public:
+    ~TargetMappingSecurity()
+    {
+        if (dacl_) LocalFree(dacl_);
+    }
+
+    bool Build(HANDLE process)
+    {
+        HANDLE token = nullptr;
+        if (!OpenProcessToken(process, TOKEN_QUERY, &token)) return false;
+
+        std::vector<BYTE> user_storage;
+        std::vector<BYTE> app_container_storage;
+        std::vector<BYTE> restricted_storage;
+        std::vector<PSID> sids;
+        PSID user_sid = nullptr;
+        if (!read_sid(token, TokenUser, user_storage, &user_sid)) {
+            CloseHandle(token);
+            return false;
+        }
+        append_unique(sids, user_sid);
+
+        PSID app_container_sid = nullptr;
+        if (read_sid(token, TokenAppContainerSid, app_container_storage, &app_container_sid))
+            append_unique(sids, app_container_sid);
+        append_restricted_sids(token, restricted_storage, sids);
+        CloseHandle(token);
+
+        if (sids.empty()) {
+            SetLastError(ERROR_INVALID_SID);
+            return false;
+        }
+        DWORD acl_size = sizeof(ACL);
+        for (PSID sid : sids) {
+            if (!IsValidSid(sid)) {
+                SetLastError(ERROR_INVALID_SID);
+                return false;
+            }
+            acl_size += sizeof(ACCESS_ALLOWED_ACE) - sizeof(DWORD) + GetLengthSid(sid);
+        }
+        dacl_ = static_cast<PACL>(LocalAlloc(LPTR, acl_size));
+        if (!dacl_) return false;
+        if (!InitializeAcl(dacl_, acl_size, ACL_REVISION)) return false;
+        for (PSID sid : sids) {
+            // The target only needs to read the configuration mapping.  Do
+            // not grant write, execute, or full access to the target token.
+            if (!AddAccessAllowedAce(dacl_, ACL_REVISION, FILE_MAP_READ, sid)) return false;
+        }
+        if (!InitializeSecurityDescriptor(&descriptor_, SECURITY_DESCRIPTOR_REVISION)) return false;
+        if (!SetSecurityDescriptorDacl(&descriptor_, TRUE, dacl_, FALSE)) return false;
+        return true;
+    }
+
+    SECURITY_ATTRIBUTES Attributes()
+    {
+        SECURITY_ATTRIBUTES attributes{};
+        attributes.nLength = sizeof(attributes);
+        attributes.lpSecurityDescriptor = &descriptor_;
+        return attributes;
+    }
+
+private:
+    static bool read_sid(HANDLE token, TOKEN_INFORMATION_CLASS information_class,
+        std::vector<BYTE> &storage, PSID *sid)
+    {
+        if (!sid) return false;
+        *sid = nullptr;
+        DWORD bytes = 0;
+        GetTokenInformation(token, information_class, nullptr, 0, &bytes);
+        if (!bytes) return false;
+        storage.resize(bytes);
+        if (!GetTokenInformation(token, information_class, storage.data(), bytes, &bytes)) return false;
+        if (information_class == TokenUser) {
+            auto *user = reinterpret_cast<const TOKEN_USER *>(storage.data());
+            *sid = user->User.Sid;
+        } else if (information_class == TokenAppContainerSid) {
+            auto *app_container = reinterpret_cast<const TOKEN_APPCONTAINER_INFORMATION *>(storage.data());
+            *sid = app_container->TokenAppContainer;
+        }
+        return *sid && IsValidSid(*sid);
+    }
+
+    static void append_unique(std::vector<PSID> &sids, PSID candidate)
+    {
+        if (!candidate) return;
+        for (PSID existing : sids)
+            if (EqualSid(existing, candidate)) return;
+        sids.push_back(candidate);
+    }
+
+    static void append_restricted_sids(HANDLE token, std::vector<BYTE> &storage, std::vector<PSID> &sids)
+    {
+        DWORD bytes = 0;
+        GetTokenInformation(token, TokenRestrictedSids, nullptr, 0, &bytes);
+        if (!bytes) return;
+        storage.resize(bytes);
+        if (!GetTokenInformation(token, TokenRestrictedSids, storage.data(), bytes, &bytes)) return;
+        const auto *groups = reinterpret_cast<const TOKEN_GROUPS *>(storage.data());
+        for (DWORD index = 0; index < groups->GroupCount; ++index)
+            if (IsValidSid(groups->Groups[index].Sid)) append_unique(sids, groups->Groups[index].Sid);
+    }
+
+    SECURITY_DESCRIPTOR descriptor_{};
+    PACL dacl_ = nullptr;
+};
+
+HANDLE write_target_configuration(HANDLE process, DWORD pid, const std::filesystem::path &trace_root, const std::wstring &level, bool partial, bool no_wrap_async_callbacks)
 {
+    TargetMappingSecurity security;
+    if (!security.Build(process)) {
+        std::wcerr << L"Unable to build target configuration security descriptor: " << GetLastError() << L"\n";
+        return nullptr;
+    }
+    SECURITY_ATTRIBUTES attributes = security.Attributes();
     const std::wstring name = xgrtrace::config::MappingName(pid);
-    HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0,
+    HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, &attributes, PAGE_READWRITE, 0,
         static_cast<DWORD>(sizeof(xgrtrace::config::SharedConfiguration)), name.c_str());
     if (!mapping) {
         std::wcerr << L"Unable to create target configuration mapping: " << GetLastError() << L"\n";
@@ -124,6 +304,18 @@ bool inject(HANDLE process, const std::wstring &dll_path)
             DWORD result = 0;
             GetExitCodeThread(thread, &result);
             ok = ok && result != 0;
+            if (ok) {
+                ModuleCheck module_check = ModuleCheck::unknown;
+                for (int attempt = 0; attempt < 100; ++attempt) {
+                    module_check = target_has_module(process, path);
+                    if (module_check != ModuleCheck::absent) break;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                }
+                if (module_check == ModuleCheck::absent) {
+                    std::wcerr << L"LoadLibraryW returned a nonzero result, but the tracer module was not present in the target.\n";
+                    ok = false;
+                }
+            }
         }
         CloseHandle(thread);
     }
@@ -156,7 +348,20 @@ HANDLE open_target(DWORD pid)
                                      PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | SYNCHRONIZE,
                                  FALSE, pid);
     if (!process) {
-        std::wcerr << L"Unable to open target process " << pid << L": " << GetLastError() << L"\n";
+        DWORD error = GetLastError();
+        if (error == ERROR_ACCESS_DENIED) {
+            HANDLE query_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (query_handle) {
+                std::wcerr << L"Target process " << pid
+                    << L" is queryable, but Windows denied the injection access rights (error 5).\n"
+                    << L"The launcher will not weaken target protections; use a target that permits supported instrumentation.\n";
+                CloseHandle(query_handle);
+            } else {
+                std::wcerr << L"Unable to open target process " << pid << L": " << error << L"\n";
+            }
+        } else {
+            std::wcerr << L"Unable to open target process " << pid << L": " << error << L"\n";
+        }
         return nullptr;
     }
     if (!target_is_x64(process)) {
@@ -186,10 +391,18 @@ int wmain(int argc, wchar_t **argv)
     std::wstring dll = L"xgrtrace-dll.dll";
     std::wstring level;
     bool no_wrap_async_callbacks = false;
+    bool dll_explicit = false;
+    bool trace_root_explicit = false;
     std::filesystem::path trace_root = std::filesystem::current_path() / L"traces";
     for (int index = 2; index < argc; ++index) {
-        if (std::wstring(argv[index]) == L"--dll" && index + 1 < argc) dll = argv[++index];
-        else if (std::wstring(argv[index]) == L"--trace-root" && index + 1 < argc) trace_root = argv[++index];
+        if (std::wstring(argv[index]) == L"--dll" && index + 1 < argc) {
+            dll = argv[++index];
+            dll_explicit = true;
+        }
+        else if (std::wstring(argv[index]) == L"--trace-root" && index + 1 < argc) {
+            trace_root = argv[++index];
+            trace_root_explicit = true;
+        }
         else if (std::wstring(argv[index]) == L"--level" && index + 1 < argc) level = argv[++index];
         else if (std::wstring(argv[index]) == L"--no-wrap-async-callbacks") no_wrap_async_callbacks = true;
     }
@@ -201,6 +414,11 @@ int wmain(int argc, wchar_t **argv)
     }
     SetEnvironmentVariableW(L"XGRTRACE_LEVEL", level.c_str());
     if (no_wrap_async_callbacks) SetEnvironmentVariableW(L"XGRTRACE_NO_WRAP_ASYNC_CALLBACKS", L"1");
+    if (!dll_explicit && GetFileAttributesW(dll.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        const auto adjacent_dll = launcher_directory() / L"xgrtrace-dll.dll";
+        if (!adjacent_dll.empty() && GetFileAttributesW(adjacent_dll.c_str()) != INVALID_FILE_ATTRIBUTES)
+            dll = adjacent_dll.wstring();
+    }
     dll = full_path(dll);
 
     if (mode == L"--spawn") {
@@ -228,7 +446,11 @@ int wmain(int argc, wchar_t **argv)
             return 1;
         }
         HANDLE target = open_target(process_info.dwProcessId);
-        HANDLE configuration = write_target_configuration(process_info.dwProcessId, trace_root, level, false, no_wrap_async_callbacks);
+        if (target) {
+            trace_root = trace_root_for_target(target, trace_root, trace_root_explicit);
+            SetEnvironmentVariableW(L"XGRTRACE_ROOT", trace_root.c_str());
+        }
+        HANDLE configuration = target ? write_target_configuration(target, process_info.dwProcessId, trace_root, level, false, no_wrap_async_callbacks) : nullptr;
         bool loaded = target && configuration && inject(target, dll);
         if (configuration) CloseHandle(configuration);
         if (target) CloseHandle(target);
@@ -261,11 +483,12 @@ int wmain(int argc, wchar_t **argv)
         return 2;
     }
 
-    HANDLE configuration = write_target_configuration(pid, trace_root, level, partial, no_wrap_async_callbacks);
-    if (!configuration) return 1;
     HANDLE target = open_target(pid);
-    if (!target) {
-        CloseHandle(configuration);
+    if (!target) return 1;
+    trace_root = trace_root_for_target(target, trace_root, trace_root_explicit);
+    HANDLE configuration = write_target_configuration(target, pid, trace_root, level, partial, no_wrap_async_callbacks);
+    if (!configuration) {
+        CloseHandle(target);
         return 1;
     }
     bool loaded = inject(target, dll);

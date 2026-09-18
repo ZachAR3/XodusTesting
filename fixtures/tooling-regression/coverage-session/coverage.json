@@ -3,8 +3,50 @@
   "session": "coverage-session",
   "game": "Title.exe",
   "partial_start": false,
-  "interfaces_requested": [],
-  "interface_revisions_requested": [],
+  "interfaces_requested": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "interface_revisions_requested": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "runtime_activity": {
+    "trace_event_counts": {
+      "initialize": 1,
+      "query_interface": 1,
+      "runtime_export_call": 1,
+      "call": 2,
+      "output": 1,
+      "return": 2
+    },
+    "interface_query_count": 1,
+    "interface_query_hresult_counts": {
+      "0x00000000": 1
+    },
+    "initialization_count": 1,
+    "initialization_methods": {
+      "InitializeApiImplEx": 1
+    },
+    "runtime_export_call_count": 1,
+    "runtime_export_failure_count": 0,
+    "runtime_export_reported_error_count": 1,
+    "runtime_exports": [
+      {
+        "name": "XErrorReport",
+        "count": 1,
+        "hresult_counts": {
+          "0x00000001": 1
+        },
+        "failure_count": 0,
+        "reported_error_counts": {
+          "0x80072EE5": 1
+        },
+        "reported_error_count": 1
+      }
+    ],
+    "runtime_load_count": 1,
+    "runtime_export_hook_count": 1,
+    "runtime_export_hooks_installed": 1
+  },
   "methods_invoked": [
     {
       "subsystem": "XThreading",
@@ -8875,6 +8917,14 @@
   ],
   "summary": {
     "calls": 2,
+    "trace_records": 8,
+    "interface_queries": 1,
+    "initializations": 1,
+    "runtime_export_calls": 1,
+    "runtime_export_failures": 0,
+    "runtime_reported_errors": 1,
+    "runtime_loads": 1,
+    "runtime_export_hooks": 1,
     "methods_invoked": 2,
     "methods_never_invoked": 416,
     "xodus_blocker_candidates": 2,

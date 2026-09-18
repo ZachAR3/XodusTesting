@@ -2,7 +2,12 @@
 
 Game: Title.exe
 Partial start: False
-Calls: 2
+Trace records: 8
+Interface method calls: 2
+Interface queries: 1
+Runtime initializations: 1
+Runtime export calls/failures/reported-errors: 1 / 0 / 1
+Runtime loads/export hooks: 1 / 1
 Methods invoked: 2 / 418
 Callbacks observed: 1
 Async started/results/completed/completion-callbacks/cancelled: 1 / 1 / 1 / 0 / 0
